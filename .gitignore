@@ -1,0 +1,52 @@
+# Compiled binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Test coverage files (keep test source files)
+coverage.txt
+coverage.html
+*.coverprofile
+
+# Environment files and sensitive configuration
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+*.env
+config.local.*
+secrets.yaml
+secrets.yml
+credentials.json
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Build files
+/build/
+/out/
+
+# Generated documentation
+/docs/_build/
