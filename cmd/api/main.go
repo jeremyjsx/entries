@@ -3,9 +3,12 @@ package main
 import (
 	"log"
 	"net/http"
+
+	"github.com/jeremyjsx/entries/internal/config"
 )
 
 func main() {
+	config := config.Load()
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -14,10 +17,10 @@ func main() {
 	})
 
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr:    ":" + config.Port,
 		Handler: mux,
 	}
 
-	log.Println("entries: server started on port 8080")
+	log.Printf("entries: server started on port %s", config.Port)
 	log.Fatal(server.ListenAndServe())
 }
