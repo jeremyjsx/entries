@@ -13,3 +13,7 @@ func NewService(repo Repository) *Service {
 func (s *Service) CreatePost(ctx context.Context, title, slug, s3Key string) (*Post, error) {
 	return s.repo.Create(ctx, title, slug, s3Key)
 }
+
+func (s *Service) GetPostBySlug(ctx context.Context, slug string) (*Post, error) {
+	return s.repo.GetBySlug(ctx, slug)
+}

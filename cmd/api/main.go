@@ -29,6 +29,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("POST /posts", handleCreatePost(svc))
+	mux.HandleFunc("GET /posts/{slug}", handleGetPostBySlug(svc))
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -85,6 +86,33 @@ func handleCreatePost(svc *posts.Service) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(post)
+	}
+}
+
+func handleGetPostBySlug(svc *posts.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		slug := r.PathValue("slug")
+
+		if slug == "" {
+			http.Error(w, "slug is required", http.StatusBadRequest)
+			return
+		}
+
+		post, err := svc.GetPostBySlug(r.Context(), slug)
+		if err != nil {
+			log.Printf("get post by slug: %v", err)
+			http.Error(w, "post not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(post)
 	}
 }
