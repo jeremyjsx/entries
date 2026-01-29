@@ -27,3 +27,13 @@ If yes, describe the changes.
 - [ ] No
 
 If yes, explain what breaks
+
+## 📎 Additional context
+Links to issues, design notes, or relevant logs.
+
+## ✅ Checklist
+- [ ] Code follows project conventions
+- [ ] Errors are handled explicitly
+- [ ] Context and timeouts are respected
+- [ ] No sensitive data exposed
+- [ ] Docs updated (if needed)
