@@ -13,13 +13,15 @@ ALTER TABLE posts ADD CONSTRAINT posts_status_check CHECK (status IN ('draft', '
 
 CREATE UNIQUE INDEX idx_posts_slug ON posts (slug);
 
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $func$
 BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER update_posts_updated_at
     BEFORE UPDATE ON posts

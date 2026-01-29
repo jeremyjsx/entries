@@ -10,6 +10,7 @@ import (
 
 type Querier interface {
 	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
+	GetPostBySlug(ctx context.Context, slug string) (Post, error)
 }
 
 var _ Querier = (*Queries)(nil)

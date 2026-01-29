@@ -38,3 +38,20 @@ func (r *postgresRepository) Create(ctx context.Context, title, slug, s3Key stri
 		UpdatedAt: dbPost.UpdatedAt,
 	}, nil
 }
+
+func (r *postgresRepository) GetBySlug(ctx context.Context, slug string) (*Post, error) {
+	dbPost, err := r.queries.GetPostBySlug(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Post{
+		ID:        dbPost.ID,
+		Title:     dbPost.Title,
+		Slug:      dbPost.Slug,
+		S3Key:     dbPost.S3Key,
+		Status:    Status(dbPost.Status),
+		CreatedAt: dbPost.CreatedAt,
+		UpdatedAt: dbPost.UpdatedAt,
+	}, nil
+}
