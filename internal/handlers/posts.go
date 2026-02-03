@@ -31,7 +31,7 @@ func (h *PostsHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req CreatePostRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body", nil)
+			writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body", nil)
 			return
 		}
 
@@ -43,18 +43,18 @@ func (h *PostsHandler) Create() http.HandlerFunc {
 			errs["slug"] = "required"
 		}
 		if len(errs) > 0 {
-			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "validation failed", errs)
+			writeError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "validation failed", errs)
 			return
 		}
 
 		post, err := h.svc.CreatePost(r.Context(), req.Title, req.Slug, req.S3Key)
 		if err != nil {
 			if errors.Is(err, posts.ErrSlugExists) {
-				writeError(w, http.StatusConflict, "CONFLICT", "slug already exists", nil)
+				writeError(w, r, http.StatusConflict, "CONFLICT", "slug already exists", nil)
 				return
 			}
 			h.logger.Error("create post failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", nil)
+			writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", nil)
 			return
 		}
 
@@ -66,18 +66,18 @@ func (h *PostsHandler) GetBySlug() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := r.PathValue("slug")
 		if slug == "" {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "slug is required", nil)
+			writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "slug is required", nil)
 			return
 		}
 
 		post, err := h.svc.GetPostBySlug(r.Context(), slug)
 		if err != nil {
 			if errors.Is(err, posts.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "NOT_FOUND", "post not found", nil)
+				writeError(w, r, http.StatusNotFound, "NOT_FOUND", "post not found", nil)
 				return
 			}
 			h.logger.Error("get post failed", "slug", slug, "error", err)
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", nil)
+			writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", nil)
 			return
 		}
 
