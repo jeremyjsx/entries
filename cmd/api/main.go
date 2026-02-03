@@ -12,6 +12,7 @@ import (
 
 	"github.com/jeremyjsx/entries/internal/config"
 	"github.com/jeremyjsx/entries/internal/handlers"
+	"github.com/jeremyjsx/entries/internal/middleware"
 	"github.com/jeremyjsx/entries/internal/posts"
 	_ "github.com/lib/pq"
 )
@@ -34,28 +35,29 @@ func main() {
 	}
 	defer db.Close()
 
-	// Initialize dependencies
 	repo := posts.NewPostgresRepository(db)
 	svc := posts.NewService(repo)
-
-	// Initialize handlers
 	postsHandler := handlers.NewPostsHandler(svc, logger)
 
-	// Setup routes
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handlers.Health())
 	mux.HandleFunc("POST /posts", postsHandler.Create())
 	mux.HandleFunc("GET /posts/{slug}", postsHandler.GetBySlug())
 
+	handler := middleware.Recovery(logger)(
+		middleware.RequestID(
+			middleware.Logging(logger)(mux),
+		),
+	)
+
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start server in goroutine
 	go func() {
 		logger.Info("server started", "port", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -64,14 +66,12 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info("shutting down server...")
 
-	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
