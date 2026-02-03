@@ -3,8 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,54 +11,76 @@ import (
 	"time"
 
 	"github.com/jeremyjsx/entries/internal/config"
+	"github.com/jeremyjsx/entries/internal/handlers"
 	"github.com/jeremyjsx/entries/internal/posts"
 	_ "github.com/lib/pq"
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+
 	cfg := config.Load()
 	if cfg.DatabaseURL == "" {
-		log.Fatal("DATABASE_URL is required")
+		logger.Error("DATABASE_URL is required")
+		os.Exit(1)
 	}
 
 	db, err := openDB(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		logger.Error("failed to open database", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
+	// Initialize dependencies
 	repo := posts.NewPostgresRepository(db)
 	svc := posts.NewService(repo)
 
+	// Initialize handlers
+	postsHandler := handlers.NewPostsHandler(svc, logger)
+
+	// Setup routes
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", handleHealth)
-	mux.HandleFunc("POST /posts", handleCreatePost(svc))
-	mux.HandleFunc("GET /posts/{slug}", handleGetPostBySlug(svc))
+	mux.HandleFunc("GET /health", handlers.Health())
+	mux.HandleFunc("POST /posts", postsHandler.Create())
+	mux.HandleFunc("GET /posts/{slug}", postsHandler.GetBySlug())
 
 	server := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: mux,
+		Addr:         ":" + cfg.Port,
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
+	// Start server in goroutine
 	go func() {
-		log.Printf("entries: server started on port %s", cfg.Port)
+		logger.Info("server started", "port", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			logger.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
+	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
+	logger.Info("shutting down server...")
+
+	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("server forced to shutdown: %v", err)
+		logger.Error("server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("goodbye, hope to see you soon! 🐾")
+	logger.Info("server stopped")
 }
 
 func openDB(databaseURL string) (*sql.DB, error) {
@@ -72,70 +93,4 @@ func openDB(databaseURL string) (*sql.DB, error) {
 		return nil, err
 	}
 	return db, nil
-}
-
-func handleHealth(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
-}
-
-func handleCreatePost(svc *posts.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		var req struct {
-			Title string `json:"title"`
-			Slug  string `json:"slug"`
-			S3Key string `json:"s3_key"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid JSON", http.StatusBadRequest)
-			return
-		}
-		if req.Title == "" || req.Slug == "" {
-			http.Error(w, "title and slug are required", http.StatusBadRequest)
-			return
-		}
-
-		post, err := svc.CreatePost(r.Context(), req.Title, req.Slug, req.S3Key)
-		if err != nil {
-			log.Printf("create post: %v", err)
-			http.Error(w, "failed to create post", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(post)
-	}
-}
-
-func handleGetPostBySlug(svc *posts.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		slug := r.PathValue("slug")
-
-		if slug == "" {
-			http.Error(w, "slug is required", http.StatusBadRequest)
-			return
-		}
-
-		post, err := svc.GetPostBySlug(r.Context(), slug)
-		if err != nil {
-			log.Printf("get post by slug: %v", err)
-			http.Error(w, "post not found", http.StatusNotFound)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(post)
-	}
 }

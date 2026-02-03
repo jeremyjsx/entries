@@ -3,6 +3,7 @@ package posts
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/jeremyjsx/entries/internal/db"
 )
@@ -28,30 +29,29 @@ func (r *postgresRepository) Create(ctx context.Context, title, slug, s3Key stri
 		return nil, err
 	}
 
-	return &Post{
-		ID:        dbPost.ID,
-		Title:     dbPost.Title,
-		Slug:      dbPost.Slug,
-		S3Key:     dbPost.S3Key,
-		Status:    Status(dbPost.Status),
-		CreatedAt: dbPost.CreatedAt,
-		UpdatedAt: dbPost.UpdatedAt,
-	}, nil
+	return toPost(dbPost), nil
 }
 
 func (r *postgresRepository) GetBySlug(ctx context.Context, slug string) (*Post, error) {
 	dbPost, err := r.queries.GetPostBySlug(ctx, slug)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
+	return toPost(dbPost), nil
+}
+
+func toPost(p db.Post) *Post {
 	return &Post{
-		ID:        dbPost.ID,
-		Title:     dbPost.Title,
-		Slug:      dbPost.Slug,
-		S3Key:     dbPost.S3Key,
-		Status:    Status(dbPost.Status),
-		CreatedAt: dbPost.CreatedAt,
-		UpdatedAt: dbPost.UpdatedAt,
-	}, nil
+		ID:        p.ID,
+		Title:     p.Title,
+		Slug:      p.Slug,
+		S3Key:     p.S3Key,
+		Status:    Status(p.Status),
+		CreatedAt: p.CreatedAt,
+		UpdatedAt: p.UpdatedAt,
+	}
 }
