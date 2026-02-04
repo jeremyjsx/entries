@@ -26,9 +26,9 @@ func NewPostsHandler(svc *posts.Service, logger *slog.Logger) *PostsHandler {
 }
 
 type PostRequest struct {
-	Title string `json:"title"`
-	Slug  string `json:"slug"`
-	S3Key string `json:"s3_key"`
+	Title   string `json:"title"`
+	Slug    string `json:"slug"`
+	Content string `json:"content"`
 }
 
 func (h *PostsHandler) Create() http.HandlerFunc {
@@ -44,7 +44,7 @@ func (h *PostsHandler) Create() http.HandlerFunc {
 			return
 		}
 
-		post, err := h.svc.CreatePost(r.Context(), req.Title, req.Slug, req.S3Key)
+		post, err := h.svc.CreatePost(r.Context(), req.Title, req.Slug, req.Content)
 		if err != nil {
 			if errors.Is(err, posts.ErrSlugExists) {
 				writeError(w, r, http.StatusConflict, "CONFLICT", "slug already exists", nil)
@@ -127,7 +127,7 @@ func (h *PostsHandler) Update() http.HandlerFunc {
 			return
 		}
 
-		post, err := h.svc.UpdatePost(r.Context(), slug, req.Title, req.Slug, req.S3Key)
+		post, err := h.svc.UpdatePost(r.Context(), slug, req.Title, req.Slug, req.Content)
 		if err != nil {
 			if errors.Is(err, posts.ErrNotFound) {
 				writeError(w, r, http.StatusNotFound, "NOT_FOUND", "post not found", nil)
