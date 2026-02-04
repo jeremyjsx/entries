@@ -6,11 +6,17 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
+	CountPosts(ctx context.Context, status sql.NullString) (int64, error)
 	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
+	DeletePostBySlug(ctx context.Context, slug string) error
 	GetPostBySlug(ctx context.Context, slug string) (Post, error)
+	ListPosts(ctx context.Context, arg ListPostsParams) ([]Post, error)
+	PublishPost(ctx context.Context, slug string) (Post, error)
+	UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error)
 }
 
 var _ Querier = (*Queries)(nil)

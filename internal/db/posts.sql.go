@@ -7,7 +7,22 @@ package db
 
 import (
 	"context"
+	"database/sql"
+
+	"github.com/google/uuid"
 )
+
+const countPosts = `-- name: CountPosts :one
+SELECT COUNT(*) FROM posts
+WHERE ($1::text IS NULL OR status = $1)
+`
+
+func (q *Queries) CountPosts(ctx context.Context, status sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPosts, status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
 
 const createPost = `-- name: CreatePost :one
 INSERT INTO posts (title, slug, s3_key, status)
@@ -42,12 +57,119 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 	return i, err
 }
 
+const deletePostBySlug = `-- name: DeletePostBySlug :exec
+DELETE FROM posts WHERE slug = $1
+`
+
+func (q *Queries) DeletePostBySlug(ctx context.Context, slug string) error {
+	_, err := q.db.ExecContext(ctx, deletePostBySlug, slug)
+	return err
+}
+
 const getPostBySlug = `-- name: GetPostBySlug :one
 SELECT id, title, slug, s3_key, status, created_at, updated_at FROM posts WHERE slug = $1
 `
 
 func (q *Queries) GetPostBySlug(ctx context.Context, slug string) (Post, error) {
 	row := q.db.QueryRowContext(ctx, getPostBySlug, slug)
+	var i Post
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.S3Key,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listPosts = `-- name: ListPosts :many
+SELECT id, title, slug, s3_key, status, created_at, updated_at FROM posts
+WHERE ($3::text IS NULL OR status = $3)
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListPostsParams struct {
+	Limit  int32
+	Offset int32
+	Status sql.NullString
+}
+
+func (q *Queries) ListPosts(ctx context.Context, arg ListPostsParams) ([]Post, error) {
+	rows, err := q.db.QueryContext(ctx, listPosts, arg.Limit, arg.Offset, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.S3Key,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const publishPost = `-- name: PublishPost :one
+UPDATE posts SET status = 'published', updated_at = NOW()
+WHERE slug = $1 AND status = 'draft'
+RETURNING id, title, slug, s3_key, status, created_at, updated_at
+`
+
+func (q *Queries) PublishPost(ctx context.Context, slug string) (Post, error) {
+	row := q.db.QueryRowContext(ctx, publishPost, slug)
+	var i Post
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.S3Key,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updatePost = `-- name: UpdatePost :one
+UPDATE posts SET title = $2, slug = $3, s3_key = $4, updated_at = NOW()
+WHERE id = $1
+RETURNING id, title, slug, s3_key, status, created_at, updated_at
+`
+
+type UpdatePostParams struct {
+	ID    uuid.UUID
+	Title string
+	Slug  string
+	S3Key string
+}
+
+func (q *Queries) UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error) {
+	row := q.db.QueryRowContext(ctx, updatePost,
+		arg.ID,
+		arg.Title,
+		arg.Slug,
+		arg.S3Key,
+	)
 	var i Post
 	err := row.Scan(
 		&i.ID,
