@@ -2,17 +2,32 @@ package posts
 
 import (
 	"context"
+	"fmt"
+	"strings"
+
+	"github.com/jeremyjsx/entries/internal/storage"
 )
 
 type Service struct {
-	repo Repository
+	repo    Repository
+	storage storage.Storage
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, storage storage.Storage) *Service {
+	return &Service{
+		repo:    repo,
+		storage: storage,
+	}
 }
 
-func (s *Service) CreatePost(ctx context.Context, title, slug, s3Key string) (*Post, error) {
+func (s *Service) CreatePost(ctx context.Context, title, slug, content string) (*Post, error) {
+	s3Key := fmt.Sprintf("posts/%s.md", slug)
+
+	err := s.storage.Upload(ctx, s3Key, strings.NewReader(content), "text/markdown")
+	if err != nil {
+		return nil, fmt.Errorf("upload to s3: %w", err)
+	}
+
 	return s.repo.Create(ctx, title, slug, s3Key)
 }
 
@@ -58,11 +73,24 @@ func (s *Service) ListPosts(ctx context.Context, page, perPage int, status *Stat
 	}, nil
 }
 
-func (s *Service) UpdatePost(ctx context.Context, currentSlug, title, newSlug, s3Key string) (*Post, error) {
+func (s *Service) UpdatePost(ctx context.Context, currentSlug, title, newSlug, content string) (*Post, error) {
 	post, err := s.repo.GetBySlug(ctx, currentSlug)
 	if err != nil {
 		return nil, err
 	}
+
+	s3Key := fmt.Sprintf("posts/%s.md", newSlug)
+
+	err = s.storage.Upload(ctx, s3Key, strings.NewReader(content), "text/markdown")
+	if err != nil {
+		return nil, fmt.Errorf("upload to s3: %w", err)
+	}
+
+	if currentSlug != newSlug {
+		oldKey := fmt.Sprintf("posts/%s.md", currentSlug)
+		_ = s.storage.Delete(ctx, oldKey)
+	}
+
 	return s.repo.Update(ctx, post.ID, title, newSlug, s3Key)
 }
 
