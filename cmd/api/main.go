@@ -41,8 +41,12 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handlers.Health())
+	mux.HandleFunc("GET /posts", postsHandler.List())
 	mux.HandleFunc("POST /posts", postsHandler.Create())
 	mux.HandleFunc("GET /posts/{slug}", postsHandler.GetBySlug())
+	mux.HandleFunc("PUT /posts/{slug}", postsHandler.Update())
+	mux.HandleFunc("DELETE /posts/{slug}", postsHandler.Delete())
+	mux.HandleFunc("PATCH /posts/{slug}/publish", postsHandler.Publish())
 
 	handler := middleware.Recovery(logger)(
 		middleware.RequestID(
