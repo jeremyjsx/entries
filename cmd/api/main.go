@@ -10,10 +10,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jeremyjsx/entries/internal/config"
 	"github.com/jeremyjsx/entries/internal/handlers"
 	"github.com/jeremyjsx/entries/internal/middleware"
 	"github.com/jeremyjsx/entries/internal/posts"
+	"github.com/jeremyjsx/entries/internal/storage"
 	_ "github.com/lib/pq"
 )
 
@@ -27,6 +31,10 @@ func main() {
 		logger.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
+	if cfg.S3Bucket == "" {
+		logger.Error("S3_BUCKET is required")
+		os.Exit(1)
+	}
 
 	db, err := openDB(cfg.DatabaseURL)
 	if err != nil {
@@ -35,8 +43,21 @@ func main() {
 	}
 	defer db.Close()
 
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.AWSRegion),
+	)
+	if err != nil {
+		logger.Error("failed to load AWS config", "error", err)
+		os.Exit(1)
+	}
+
+	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(os.Getenv("S3_ENDPOINT"))
+	})
+	store := storage.NewS3Storage(s3Client, cfg.S3Bucket)
+
 	repo := posts.NewPostgresRepository(db)
-	svc := posts.NewService(repo)
+	svc := posts.NewService(repo, store)
 	postsHandler := handlers.NewPostsHandler(svc, logger)
 
 	mux := http.NewServeMux()
