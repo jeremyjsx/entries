@@ -14,7 +14,7 @@ Event-driven content backend with Markdown publishing and async distribution. Bu
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.25+
 - Docker & Docker Compose
 - Make (optional; you can run the commands manually)
 - [goose](https://github.com/pressly/goose) for migrations (`go install github.com/pressly/goose/v3/cmd/goose@latest`)
