@@ -55,6 +55,34 @@ func (s *S3Storage) Delete(ctx context.Context, key string) error {
 	return err
 }
 
+func (s *S3Storage) DeletePrefix(ctx context.Context, prefix string) error {
+	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+		Prefix: aws.String(prefix),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return err
+		}
+		if len(page.Contents) == 0 {
+			continue
+		}
+		ids := make([]types.ObjectIdentifier, len(page.Contents))
+		for i, obj := range page.Contents {
+			ids[i] = types.ObjectIdentifier{Key: obj.Key}
+		}
+		_, err = s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(s.bucket),
+			Delete: &types.Delete{Objects: ids},
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *S3Storage) Exists(ctx context.Context, key string) (bool, error) {
 	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucket),
