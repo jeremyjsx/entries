@@ -7,13 +7,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jeremyjsx/entries/internal/config"
 	"github.com/jeremyjsx/entries/internal/handlers"
 	"github.com/jeremyjsx/entries/internal/middleware"
 	"github.com/jeremyjsx/entries/internal/posts"
+	"github.com/jeremyjsx/entries/internal/storage"
 	_ "github.com/lib/pq"
 )
 
@@ -27,6 +32,10 @@ func main() {
 		logger.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
+	if cfg.S3Bucket == "" {
+		logger.Error("S3_BUCKET is required")
+		os.Exit(1)
+	}
 
 	db, err := openDB(cfg.DatabaseURL)
 	if err != nil {
@@ -35,14 +44,35 @@ func main() {
 	}
 	defer db.Close()
 
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.AWSRegion),
+	)
+	if err != nil {
+		logger.Error("failed to load AWS config", "error", err)
+		os.Exit(1)
+	}
+
+	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		if cfg.S3Endpoint != "" {
+			o.BaseEndpoint = aws.String(cfg.S3Endpoint)
+			o.UsePathStyle = true
+		}
+	})
+	store := storage.NewS3Storage(s3Client, cfg.S3Bucket)
+
+	var s3PublicBaseURL string
+	if cfg.S3Endpoint != "" {
+		s3PublicBaseURL = strings.TrimSuffix(cfg.S3Endpoint, "/") + "/" + cfg.S3Bucket
+	}
 	repo := posts.NewPostgresRepository(db)
-	svc := posts.NewService(repo)
+	svc := posts.NewService(repo, store, cfg.S3Bucket, cfg.AWSRegion, s3PublicBaseURL)
 	postsHandler := handlers.NewPostsHandler(svc, logger)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handlers.Health())
 	mux.HandleFunc("GET /posts", postsHandler.List())
 	mux.HandleFunc("POST /posts", postsHandler.Create())
+	mux.HandleFunc("GET /posts/{slug}/content", postsHandler.GetContent())
 	mux.HandleFunc("GET /posts/{slug}", postsHandler.GetBySlug())
 	mux.HandleFunc("PUT /posts/{slug}", postsHandler.Update())
 	mux.HandleFunc("DELETE /posts/{slug}", postsHandler.Delete())

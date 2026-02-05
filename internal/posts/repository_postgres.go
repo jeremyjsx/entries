@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jeremyjsx/entries/internal/db"
+	"github.com/lib/pq"
 )
 
 var _ Repository = (*postgresRepository)(nil)
@@ -27,6 +28,10 @@ func (r *postgresRepository) Create(ctx context.Context, title, slug, s3Key stri
 		Status: string(Draft),
 	})
 	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+			return nil, ErrSlugExists
+		}
 		return nil, err
 	}
 	return toPost(dbPost), nil
@@ -83,6 +88,10 @@ func (r *postgresRepository) Update(ctx context.Context, id uuid.UUID, title, sl
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
+		}
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+			return nil, ErrSlugExists
 		}
 		return nil, err
 	}

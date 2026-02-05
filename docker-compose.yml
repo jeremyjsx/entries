@@ -12,5 +12,19 @@ services:
     volumes:
       - entries_pgdata:/var/lib/postgresql/data
 
+  localstack:
+    image: localstack/localstack:latest
+    container_name: entries-localstack
+    restart: unless-stopped
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+      - PERSISTENCE=1
+    ports:
+      - "4566:4566"
+    volumes:
+      - entries_localstack:/var/lib/localstack
+
 volumes:
   entries_pgdata:
+  entries_localstack:

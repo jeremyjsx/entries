@@ -10,6 +10,9 @@ import (
 type Config struct {
 	Port        string
 	DatabaseURL string
+	S3Bucket    string
+	AWSRegion   string
+	S3Endpoint  string
 }
 
 func Load() *Config {
@@ -20,6 +23,9 @@ func Load() *Config {
 	return &Config{
 		Port:        getEnv("PORT", "8080"),
 		DatabaseURL: getEnv("DATABASE_URL", ""),
+		S3Bucket:    getEnv("S3_BUCKET", ""),
+		AWSRegion:   getEnv("AWS_REGION", "us-east-1"),
+		S3Endpoint:  getEnv("S3_ENDPOINT", ""),
 	}
 }
 
