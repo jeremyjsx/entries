@@ -109,14 +109,22 @@ func (h *PostsHandler) GetContent() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write(content)
+		if _, err := w.Write(content); err != nil {
+			h.logger.Error("write content failed", "slug", slug, "error", err)
+		}
 	}
 }
 
 func (h *PostsHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-		perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		if err != nil {
+			page = 0
+		}
+		perPage, err := strconv.Atoi(r.URL.Query().Get("per_page"))
+		if err != nil {
+			perPage = 0
+		}
 
 		var status *posts.Status
 		if s := r.URL.Query().Get("status"); s != "" {
