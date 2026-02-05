@@ -31,6 +31,12 @@ type PostRequest struct {
 	Content string `json:"content"`
 }
 
+type UpdatePostRequest struct {
+	Title   *string `json:"title"`
+	Slug    *string `json:"slug"`
+	Content *string `json:"content"`
+}
+
 func (h *PostsHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req PostRequest
@@ -39,7 +45,7 @@ func (h *PostsHandler) Create() http.HandlerFunc {
 			return
 		}
 
-		if errs := validatePostRequest(req.Title, req.Slug); len(errs) > 0 {
+		if errs := validatePostRequest(req.Title, req.Slug, req.Content); len(errs) > 0 {
 			writeError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "validation failed", errs)
 			return
 		}
@@ -82,6 +88,31 @@ func (h *PostsHandler) GetBySlug() http.HandlerFunc {
 	}
 }
 
+func (h *PostsHandler) GetContent() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		if slug == "" {
+			writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "slug is required", nil)
+			return
+		}
+
+		content, err := h.svc.GetPostContent(r.Context(), slug)
+		if err != nil {
+			if errors.Is(err, posts.ErrNotFound) {
+				writeError(w, r, http.StatusNotFound, "NOT_FOUND", "post or content not found", nil)
+				return
+			}
+			h.logger.Error("get post content failed", "slug", slug, "error", err)
+			writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", nil)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write(content)
+	}
+}
+
 func (h *PostsHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
@@ -116,13 +147,18 @@ func (h *PostsHandler) Update() http.HandlerFunc {
 			return
 		}
 
-		var req PostRequest
+		var req UpdatePostRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body", nil)
 			return
 		}
 
-		if errs := validatePostRequest(req.Title, req.Slug); len(errs) > 0 {
+		if req.Title == nil && req.Slug == nil && req.Content == nil {
+			writeError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "at least one field (title, slug, content) is required", map[string]string{"_": "provide title, slug and/or content"})
+			return
+		}
+
+		if errs := validateUpdateRequest(req); len(errs) > 0 {
 			writeError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "validation failed", errs)
 			return
 		}
@@ -131,6 +167,10 @@ func (h *PostsHandler) Update() http.HandlerFunc {
 		if err != nil {
 			if errors.Is(err, posts.ErrNotFound) {
 				writeError(w, r, http.StatusNotFound, "NOT_FOUND", "post not found", nil)
+				return
+			}
+			if errors.Is(err, posts.ErrSlugExists) {
+				writeError(w, r, http.StatusConflict, "CONFLICT", "slug already exists", nil)
 				return
 			}
 			h.logger.Error("update post failed", "slug", slug, "error", err)
@@ -151,6 +191,10 @@ func (h *PostsHandler) Delete() http.HandlerFunc {
 		}
 
 		if err := h.svc.DeletePost(r.Context(), slug); err != nil {
+			if errors.Is(err, posts.ErrNotFound) {
+				writeError(w, r, http.StatusNotFound, "NOT_FOUND", "post not found", nil)
+				return
+			}
 			h.logger.Error("delete post failed", "slug", slug, "error", err)
 			writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", nil)
 			return
@@ -183,7 +227,7 @@ func (h *PostsHandler) Publish() http.HandlerFunc {
 	}
 }
 
-func validatePostRequest(title, slug string) map[string]string {
+func validatePostRequest(title, slug, content string) map[string]string {
 	errs := make(map[string]string)
 	if title == "" {
 		errs["title"] = "required"
@@ -196,6 +240,30 @@ func validatePostRequest(title, slug string) map[string]string {
 		errs["slug"] = "max 100 characters"
 	} else if !slugRegex.MatchString(slug) {
 		errs["slug"] = "must be lowercase alphanumeric with hyphens"
+	}
+	if content == "" {
+		errs["content"] = "required"
+	}
+	return errs
+}
+
+func validateUpdateRequest(req UpdatePostRequest) map[string]string {
+	errs := make(map[string]string)
+	if req.Title != nil {
+		if *req.Title == "" {
+			errs["title"] = "cannot be empty"
+		} else if len(*req.Title) > 200 {
+			errs["title"] = "max 200 characters"
+		}
+	}
+	if req.Slug != nil {
+		if *req.Slug == "" {
+			errs["slug"] = "cannot be empty"
+		} else if len(*req.Slug) > 100 {
+			errs["slug"] = "max 100 characters"
+		} else if !slugRegex.MatchString(*req.Slug) {
+			errs["slug"] = "must be lowercase alphanumeric with hyphens"
+		}
 	}
 	return errs
 }
