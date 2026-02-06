@@ -13,13 +13,13 @@ import (
 )
 
 type mockRepo struct {
-	create   func(ctx context.Context, title, slug, s3Key string) (*Post, error)
+	create    func(ctx context.Context, title, slug, s3Key string) (*Post, error)
 	getBySlug func(ctx context.Context, slug string) (*Post, error)
-	list     func(ctx context.Context, params ListParams) ([]*Post, error)
-	count    func(ctx context.Context, status *Status) (int64, error)
-	update   func(ctx context.Context, id uuid.UUID, title, slug, s3Key string) (*Post, error)
-	delete   func(ctx context.Context, slug string) error
-	publish  func(ctx context.Context, slug string) (*Post, error)
+	list      func(ctx context.Context, params ListParams) ([]*Post, error)
+	count     func(ctx context.Context, status *Status) (int64, error)
+	update    func(ctx context.Context, id uuid.UUID, title, slug, s3Key string) (*Post, error)
+	delete    func(ctx context.Context, slug string) error
+	publish   func(ctx context.Context, slug string) (*Post, error)
 }
 
 func (m *mockRepo) Create(ctx context.Context, title, slug, s3Key string) (*Post, error) {
@@ -72,11 +72,11 @@ func (m *mockRepo) Publish(ctx context.Context, slug string) (*Post, error) {
 }
 
 type mockStorage struct {
-	upload      func(ctx context.Context, key string, body io.Reader, contentType string) error
-	download    func(ctx context.Context, key string) (io.ReadCloser, error)
-	delete      func(ctx context.Context, key string) error
+	upload       func(ctx context.Context, key string, body io.Reader, contentType string) error
+	download     func(ctx context.Context, key string) (io.ReadCloser, error)
+	delete       func(ctx context.Context, key string) error
 	deletePrefix func(ctx context.Context, prefix string) error
-	exists      func(ctx context.Context, key string) (bool, error)
+	exists       func(ctx context.Context, key string) (bool, error)
 }
 
 func (m *mockStorage) Upload(ctx context.Context, key string, body io.Reader, contentType string) error {
@@ -486,7 +486,7 @@ func TestService_DeletePost(t *testing.T) {
 			delete: func(context.Context, string) error { return nil },
 		}
 		st := &mockStorage{
-			delete:      func(context.Context, string) error { return nil },
+			delete:       func(context.Context, string) error { return nil },
 			deletePrefix: func(context.Context, string) error { return nil },
 		}
 		svc := NewService(repo, st, "b", "r", "")
