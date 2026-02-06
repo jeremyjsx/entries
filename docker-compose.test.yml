@@ -1,0 +1,10 @@
+# Ephemeral Postgres for integration tests. Use: make test-integration
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: entries
+      POSTGRES_PASSWORD: entries
+      POSTGRES_DB: entries
+    ports:
+      - "5433:5432"
