@@ -57,6 +57,10 @@ make run
 ```bash
 make dev      # Start infrastructure only
 make run      # Run API
+make test     # Unit tests (excludes integration)
+make test-integration     # Integration tests
+make coverage             # Unit-test coverage
+make coverage-integration # Unit + integration coverage
 make lint     # Lint (gofmt, vet, golangci-lint)
 make format   # Format code
 make migrate  # Run migrations

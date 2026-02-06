@@ -1,4 +1,4 @@
-.PHONY: dev down run build lint format migrate sqlc-generate sqlc-check bucket ci help
+.PHONY: dev down run build test test-integration coverage coverage-integration lint format migrate sqlc-generate sqlc-check bucket ci help
 
 # Start infrastructure (PostgreSQL, LocalStack)
 dev:
@@ -16,8 +16,41 @@ run:
 build:
 	go build -o entries ./cmd/api
 
-# Run CI steps locally (lint, build, sqlc check)
-ci: lint build sqlc-check
+# Build and run unit tests
+test:
+	go test -short ./...
+
+TEST_DB_URL = postgres://entries:entries@localhost:5433/entries?sslmode=disable
+# Run integration tests (ephemeral Postgres, then tear down)
+test-integration:
+	docker compose -f docker-compose.test.yml up -d && \
+	sleep 5 && \
+	( \
+	  TEST_DATABASE_URL='$(TEST_DB_URL)' goose -dir internal/db/migrations postgres '$(TEST_DB_URL)' up && \
+	  TEST_DATABASE_URL='$(TEST_DB_URL)' go test -tags=integration ./...; \
+	  r=$$?; docker compose -f docker-compose.test.yml down; exit $$r \
+	)
+
+# Run unit tests and generate coverage (fast; internal/posts + internal/handlers)
+coverage:
+	go test -short -coverprofile=coverage.out ./internal/posts/... ./internal/handlers/...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage written to coverage.html"
+
+# Run unit + integration tests and generate coverage (includes repo/DB)
+coverage-integration:
+	docker compose -f docker-compose.test.yml up -d && \
+	sleep 5 && \
+	( \
+	  TEST_DATABASE_URL='$(TEST_DB_URL)' goose -dir internal/db/migrations postgres '$(TEST_DB_URL)' up && \
+	  TEST_DATABASE_URL='$(TEST_DB_URL)' go test -tags=integration -coverprofile=coverage.out ./... && \
+	  go tool cover -html=coverage.out -o coverage.html; \
+	  r=$$?; docker compose -f docker-compose.test.yml down; exit $$r \
+	)
+	@echo "Coverage (with integration) written to coverage.html"
+
+# Run CI steps locally (lint, build, test, sqlc check)
+ci: lint build test sqlc-check
 
 # Verify sqlc generated code is up to date
 sqlc-check:
@@ -35,9 +68,9 @@ format:
 	gofmt -w .
 	go mod tidy
 
-# Run database migrations (requires DEV services up and DATABASE_URL in .env)
+# Run database migrations (requires DATABASE_URL in env)
 migrate:
-	goose -dir internal/db/migrations postgres "$${DATABASE_URL}" up
+	goose -dir internal/db/migrations postgres "$(DATABASE_URL)" up
 
 # Generate sqlc code
 sqlc-generate:
@@ -59,5 +92,9 @@ help:
 	@echo "  make migrate      Apply DB migrations"
 	@echo "  make sqlc-generate  Generate sqlc code"
 	@echo "  make bucket       Create S3 bucket in LocalStack"
-	@echo "  make ci           Run CI locally (lint, build, sqlc check)"
+	@echo "  make test         Run unit tests"
+	@echo "  make test-integration     Run integration tests (ephemeral Postgres, then tear down)"
+	@echo "  make coverage             Unit-test coverage → coverage.html"
+	@echo "  make coverage-integration  Unit + integration coverage (includes repo/DB)"
+	@echo "  make ci           Run CI locally (lint, build, test, sqlc check)"
 	@echo "  make help         Show this help"
