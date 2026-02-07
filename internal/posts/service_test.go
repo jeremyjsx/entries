@@ -13,13 +13,13 @@ import (
 )
 
 type mockRepo struct {
-	create   func(ctx context.Context, title, slug, s3Key string) (*Post, error)
+	create    func(ctx context.Context, title, slug, s3Key string) (*Post, error)
 	getBySlug func(ctx context.Context, slug string) (*Post, error)
-	list     func(ctx context.Context, params ListParams) ([]*Post, error)
-	count    func(ctx context.Context, status *Status) (int64, error)
-	update   func(ctx context.Context, id uuid.UUID, title, slug, s3Key string) (*Post, error)
-	delete   func(ctx context.Context, slug string) error
-	publish  func(ctx context.Context, slug string) (*Post, error)
+	list      func(ctx context.Context, params ListParams) ([]*Post, error)
+	count     func(ctx context.Context, status *Status) (int64, error)
+	update    func(ctx context.Context, id uuid.UUID, title, slug, s3Key string) (*Post, error)
+	delete    func(ctx context.Context, slug string) error
+	publish   func(ctx context.Context, slug string) (*Post, error)
 }
 
 func (m *mockRepo) Create(ctx context.Context, title, slug, s3Key string) (*Post, error) {
@@ -72,11 +72,11 @@ func (m *mockRepo) Publish(ctx context.Context, slug string) (*Post, error) {
 }
 
 type mockStorage struct {
-	upload      func(ctx context.Context, key string, body io.Reader, contentType string) error
-	download    func(ctx context.Context, key string) (io.ReadCloser, error)
-	delete      func(ctx context.Context, key string) error
+	upload       func(ctx context.Context, key string, body io.Reader, contentType string) error
+	download     func(ctx context.Context, key string) (io.ReadCloser, error)
+	delete       func(ctx context.Context, key string) error
 	deletePrefix func(ctx context.Context, prefix string) error
-	exists      func(ctx context.Context, key string) (bool, error)
+	exists       func(ctx context.Context, key string) (bool, error)
 }
 
 func (m *mockStorage) Upload(ctx context.Context, key string, body io.Reader, contentType string) error {
@@ -148,7 +148,7 @@ func TestService_CreatePost(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewService(repo, st, "b", "us-east-1", "")
+		svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "us-east-1"})
 		got, err := svc.CreatePost(ctx, "Hi", "hi", "# Hello")
 		if err != nil {
 			t.Fatalf("CreatePost: %v", err)
@@ -164,7 +164,7 @@ func TestService_CreatePost(t *testing.T) {
 	t.Run("repo returns ErrSlugExists", func(t *testing.T) {
 		ctx := context.Background()
 		repo := &mockRepo{create: func(context.Context, string, string, string) (*Post, error) { return nil, ErrSlugExists }}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		_, err := svc.CreatePost(ctx, "T", "t", "body")
 		if !errors.Is(err, ErrSlugExists) {
 			t.Errorf("got err %v", err)
@@ -179,7 +179,7 @@ func TestService_CreatePost(t *testing.T) {
 		st := &mockStorage{upload: func(context.Context, string, io.Reader, string) error {
 			return errors.New("upload failed")
 		}}
-		svc := NewService(repo, st, "b", "r", "")
+		svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		_, err := svc.CreatePost(ctx, "T", "x", "body")
 		if err == nil || !strings.Contains(err.Error(), "upload to s3") {
 			t.Errorf("got err %v", err)
@@ -192,7 +192,7 @@ func TestService_GetPostBySlug(t *testing.T) {
 		ctx := context.Background()
 		want := &Post{ID: uuid.New(), Title: "A", Slug: "a", Status: Draft}
 		repo := &mockRepo{getBySlug: func(context.Context, string) (*Post, error) { return want, nil }}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		got, err := svc.GetPostBySlug(ctx, "a")
 		if err != nil {
 			t.Fatalf("GetPostBySlug: %v", err)
@@ -205,7 +205,7 @@ func TestService_GetPostBySlug(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		ctx := context.Background()
 		repo := &mockRepo{getBySlug: func(context.Context, string) (*Post, error) { return nil, ErrNotFound }}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		_, err := svc.GetPostBySlug(ctx, "missing")
 		if !errors.Is(err, ErrNotFound) {
 			t.Errorf("got err %v", err)
@@ -222,7 +222,7 @@ func TestService_GetPostContent(t *testing.T) {
 		st := &mockStorage{download: func(context.Context, string) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("markdown here")), nil
 		}}
-		svc := NewService(repo, st, "b", "r", "")
+		svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		body, err := svc.GetPostContent(ctx, "a")
 		if err != nil {
 			t.Fatalf("GetPostContent: %v", err)
@@ -235,7 +235,7 @@ func TestService_GetPostContent(t *testing.T) {
 	t.Run("post not found", func(t *testing.T) {
 		ctx := context.Background()
 		repo := &mockRepo{getBySlug: func(context.Context, string) (*Post, error) { return nil, ErrNotFound }}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		_, err := svc.GetPostContent(ctx, "x")
 		if !errors.Is(err, ErrNotFound) {
 			t.Errorf("got err %v", err)
@@ -250,7 +250,7 @@ func TestService_GetPostContent(t *testing.T) {
 		st := &mockStorage{download: func(context.Context, string) (io.ReadCloser, error) {
 			return nil, storage.ErrNotFound
 		}}
-		svc := NewService(repo, st, "b", "r", "")
+		svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		_, err := svc.GetPostContent(ctx, "a")
 		if !errors.Is(err, ErrNotFound) {
 			t.Errorf("got err %v", err)
@@ -266,7 +266,7 @@ func TestService_ListPosts(t *testing.T) {
 			list:  func(context.Context, ListParams) ([]*Post, error) { return posts, nil },
 			count: func(context.Context, *Status) (int64, error) { return 1, nil },
 		}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		result, err := svc.ListPosts(ctx, 1, 10, nil)
 		if err != nil {
 			t.Fatalf("ListPosts: %v", err)
@@ -287,7 +287,7 @@ func TestService_ListPosts(t *testing.T) {
 			},
 			count: func(context.Context, *Status) (int64, error) { return 0, nil },
 		}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		result, err := svc.ListPosts(ctx, 0, 0, nil)
 		if err != nil {
 			t.Fatalf("ListPosts: %v", err)
@@ -314,7 +314,7 @@ func TestService_UpdatePost(t *testing.T) {
 				return &Post{ID: id, Title: title, Slug: slug, S3Key: s3Key}, nil
 			},
 		}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		got, err := svc.UpdatePost(ctx, "old", &title, nil, nil)
 		if err != nil {
 			t.Fatalf("UpdatePost: %v", err)
@@ -327,7 +327,7 @@ func TestService_UpdatePost(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		ctx := context.Background()
 		repo := &mockRepo{getBySlug: func(context.Context, string) (*Post, error) { return nil, ErrNotFound }}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		title := "X"
 		_, err := svc.UpdatePost(ctx, "x", &title, nil, nil)
 		if !errors.Is(err, ErrNotFound) {
@@ -359,7 +359,7 @@ func TestService_UpdatePost(t *testing.T) {
 			},
 			delete: func(context.Context, string) error { return nil },
 		}
-		svc := NewService(repo, st, "b", "r", "")
+		svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		got, err := svc.UpdatePost(ctx, "old", &newTitle, &newSlug, &newContent)
 		if err != nil {
 			t.Fatalf("UpdatePost: %v", err)
@@ -379,7 +379,7 @@ func TestService_UpdatePost(t *testing.T) {
 		st := &mockStorage{upload: func(context.Context, string, io.Reader, string) error {
 			return errors.New("upload failed")
 		}}
-		svc := NewService(repo, st, "b", "r", "")
+		svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		_, err := svc.UpdatePost(ctx, "old", nil, nil, &content)
 		if err == nil || !strings.Contains(err.Error(), "upload to s3") {
 			t.Errorf("got err %v", err)
@@ -413,7 +413,7 @@ func TestService_UpdatePost(t *testing.T) {
 			},
 			delete: func(context.Context, string) error { return nil },
 		}
-		svc := NewService(repo, st, "b", "r", "")
+		svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		got, err := svc.UpdatePost(ctx, "old", nil, &newSlug, nil)
 		if err != nil {
 			t.Fatalf("UpdatePost: %v", err)
@@ -433,7 +433,7 @@ func TestService_UpdatePost(t *testing.T) {
 		st := &mockStorage{download: func(context.Context, string) (io.ReadCloser, error) {
 			return nil, errors.New("download failed")
 		}}
-		svc := NewService(repo, st, "b", "r", "")
+		svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		_, err := svc.UpdatePost(ctx, "old", nil, &newSlug, nil)
 		if err == nil || !strings.Contains(err.Error(), "download current content") {
 			t.Errorf("got err %v", err)
@@ -451,7 +451,7 @@ func TestService_UpdatePost(t *testing.T) {
 				return &Post{S3Key: s3Key}, nil
 			},
 		}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		got, err := svc.UpdatePost(ctx, "old", nil, nil, nil)
 		if err != nil {
 			t.Fatalf("UpdatePost: %v", err)
@@ -468,7 +468,7 @@ func TestService_UpdatePost(t *testing.T) {
 			getBySlug: func(context.Context, string) (*Post, error) { return existing, nil },
 			update:    func(context.Context, uuid.UUID, string, string, string) (*Post, error) { return nil, ErrSlugExists },
 		}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		_, err := svc.UpdatePost(ctx, "old", &title, nil, nil)
 		if !errors.Is(err, ErrSlugExists) {
 			t.Errorf("got err %v", err)
@@ -486,10 +486,10 @@ func TestService_DeletePost(t *testing.T) {
 			delete: func(context.Context, string) error { return nil },
 		}
 		st := &mockStorage{
-			delete:      func(context.Context, string) error { return nil },
+			delete:       func(context.Context, string) error { return nil },
 			deletePrefix: func(context.Context, string) error { return nil },
 		}
-		svc := NewService(repo, st, "b", "r", "")
+		svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		err := svc.DeletePost(ctx, "a")
 		if err != nil {
 			t.Fatalf("DeletePost: %v", err)
@@ -499,7 +499,7 @@ func TestService_DeletePost(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		ctx := context.Background()
 		repo := &mockRepo{getBySlug: func(context.Context, string) (*Post, error) { return nil, ErrNotFound }}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		err := svc.DeletePost(ctx, "x")
 		if !errors.Is(err, ErrNotFound) {
 			t.Errorf("got err %v", err)
@@ -512,7 +512,7 @@ func TestService_PublishPost(t *testing.T) {
 		ctx := context.Background()
 		want := &Post{ID: uuid.New(), Slug: "p", Status: Published}
 		repo := &mockRepo{publish: func(context.Context, string) (*Post, error) { return want, nil }}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		got, err := svc.PublishPost(ctx, "p")
 		if err != nil {
 			t.Fatalf("PublishPost: %v", err)
@@ -525,7 +525,7 @@ func TestService_PublishPost(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		ctx := context.Background()
 		repo := &mockRepo{publish: func(context.Context, string) (*Post, error) { return nil, ErrNotFound }}
-		svc := NewService(repo, &mockStorage{}, "b", "r", "")
+		svc := NewService(repo, &mockStorage{}, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 		_, err := svc.PublishPost(ctx, "x")
 		if !errors.Is(err, ErrNotFound) {
 			t.Errorf("got err %v", err)
@@ -536,12 +536,12 @@ func TestService_PublishPost(t *testing.T) {
 func TestService_s3PublicURL(t *testing.T) {
 	repo := &mockRepo{}
 	st := &mockStorage{}
-	svc := NewService(repo, st, "mybucket", "us-east-1", "")
+	svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "mybucket", AWSRegion: "us-east-1"})
 	u := svc.s3PublicURL("posts/a.md")
 	if u != "https://mybucket.s3.us-east-1.amazonaws.com/posts/a.md" {
 		t.Errorf("got %q", u)
 	}
-	svc2 := NewService(repo, st, "b", "r", "https://cdn.example.com")
+	svc2 := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r", S3PublicBaseURL: "https://cdn.example.com"})
 	u2 := svc2.s3PublicURL("posts/a.md")
 	if u2 != "https://cdn.example.com/posts/a.md" {
 		t.Errorf("got %q", u2)
@@ -561,7 +561,7 @@ func TestService_processMarkdownImages(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(repo, st, "b", "r", "")
+	svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 	b64 := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 	content := "# Post\n\n![alt](data:image/png;base64," + b64 + ")"
 	_, err := svc.CreatePost(ctx, "Img", "img", content)
@@ -590,7 +590,7 @@ func TestService_processMarkdownImages_disallowedType(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(repo, st, "b", "r", "")
+	svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 	content := "# Post\n\n![alt](data:image/svg+xml;base64,PHN2Zy8+)"
 	_, err := svc.CreatePost(ctx, "Img", "img", content)
 	if err != nil {
@@ -615,7 +615,7 @@ func TestService_processMarkdownImages_invalidBase64(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(repo, st, "b", "r", "")
+	svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 	content := "# Post\n\n![alt](data:image/png;base64,not-valid-base64!!)"
 	_, err := svc.CreatePost(ctx, "Img", "img", content)
 	if err != nil {
@@ -642,7 +642,7 @@ func TestService_processMarkdownImages_uploadFails(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(repo, st, "b", "r", "")
+	svc := NewService(repo, st, nil, nil, ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 	b64 := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 	content := "# Post\n\n![alt](data:image/png;base64," + b64 + ")"
 	_, err := svc.CreatePost(ctx, "Img", "img", content)
