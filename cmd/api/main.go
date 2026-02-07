@@ -15,6 +15,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jeremyjsx/entries/internal/config"
+	"github.com/jeremyjsx/entries/internal/events"
 	"github.com/jeremyjsx/entries/internal/handlers"
 	"github.com/jeremyjsx/entries/internal/middleware"
 	"github.com/jeremyjsx/entries/internal/posts"
@@ -23,9 +24,7 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	cfg := config.Load()
 	if cfg.DatabaseURL == "" {
@@ -51,7 +50,6 @@ func main() {
 		logger.Error("failed to load AWS config", "error", err)
 		os.Exit(1)
 	}
-
 	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		if cfg.S3Endpoint != "" {
 			o.BaseEndpoint = aws.String(cfg.S3Endpoint)
@@ -59,13 +57,35 @@ func main() {
 		}
 	})
 	store := storage.NewS3Storage(s3Client, cfg.S3Bucket)
-
-	var s3PublicBaseURL string
+	s3PublicBaseURL := ""
 	if cfg.S3Endpoint != "" {
 		s3PublicBaseURL = strings.TrimSuffix(cfg.S3Endpoint, "/") + "/" + cfg.S3Bucket
 	}
+
+	var publisher events.Publisher = events.NoopPublisher{}
+	if cfg.RabbitMQURL != "" {
+		rmq, err := events.NewRabbitMQPublisher(cfg.RabbitMQURL)
+		if err != nil {
+			logger.Error("failed to connect to RabbitMQ", "error", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := rmq.Close(); err != nil {
+				logger.Warn("rabbitmq close on shutdown", "error", err)
+			}
+		}()
+		publisher = rmq
+		logger.Info("event publisher connected", "broker", "rabbitmq")
+	} else {
+		logger.Info("event publisher disabled", "broker", "none")
+	}
+
 	repo := posts.NewPostgresRepository(db)
-	svc := posts.NewService(repo, store, cfg.S3Bucket, cfg.AWSRegion, s3PublicBaseURL)
+	svc := posts.NewService(repo, store, publisher, logger, posts.ServiceConfig{
+		S3Bucket:        cfg.S3Bucket,
+		AWSRegion:       cfg.AWSRegion,
+		S3PublicBaseURL: s3PublicBaseURL,
+	})
 	postsHandler := handlers.NewPostsHandler(svc, logger)
 
 	mux := http.NewServeMux()
@@ -79,11 +99,8 @@ func main() {
 	mux.HandleFunc("PATCH /posts/{slug}/publish", postsHandler.Publish())
 
 	handler := middleware.Recovery(logger)(
-		middleware.RequestID(
-			middleware.Logging(logger)(mux),
-		),
+		middleware.RequestID(middleware.Logging(logger)(mux)),
 	)
-
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      handler,
@@ -103,17 +120,13 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-
 	logger.Info("shutting down server...")
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("server forced to shutdown", "error", err)
 		os.Exit(1)
 	}
-
 	logger.Info("server stopped")
 }
 

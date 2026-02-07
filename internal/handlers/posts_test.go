@@ -120,7 +120,7 @@ func (m *testMockStorage) Exists(ctx context.Context, key string) (bool, error) 
 func testHandler(t *testing.T) (*PostsHandler, *testMockRepo, *testMockStorage) {
 	repo := &testMockRepo{}
 	st := &testMockStorage{}
-	svc := posts.NewService(repo, st, "b", "r", "")
+	svc := posts.NewService(repo, st, nil, nil, posts.ServiceConfig{S3Bucket: "b", AWSRegion: "r"})
 	h := NewPostsHandler(svc, slog.Default())
 	return h, repo, st
 }

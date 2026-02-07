@@ -6,10 +6,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log/slog"
 	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jeremyjsx/entries/internal/events"
 	"github.com/jeremyjsx/entries/internal/storage"
 )
 
@@ -17,21 +19,37 @@ const maxImageSize = 5 << 20
 
 var dataURLImageRegex = regexp.MustCompile(`!\[([^\]]*)\]\(data:image/([a-zA-Z]+);base64,([^)]+)\)`)
 
+type ServiceConfig struct {
+	S3Bucket        string
+	AWSRegion       string
+	S3PublicBaseURL string
+}
+
 type Service struct {
 	repo            Repository
 	storage         storage.Storage
+	publisher       events.Publisher
+	logger          *slog.Logger
 	s3Bucket        string
 	awsRegion       string
 	s3PublicBaseURL string
 }
 
-func NewService(repo Repository, storage storage.Storage, s3Bucket, awsRegion, s3PublicBaseURL string) *Service {
+func NewService(repo Repository, storage storage.Storage, publisher events.Publisher, logger *slog.Logger, opts ServiceConfig) *Service {
+	if publisher == nil {
+		publisher = events.NoopPublisher{}
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Service{
 		repo:            repo,
 		storage:         storage,
-		s3Bucket:        s3Bucket,
-		awsRegion:       awsRegion,
-		s3PublicBaseURL: s3PublicBaseURL,
+		publisher:       publisher,
+		logger:          logger,
+		s3Bucket:        opts.S3Bucket,
+		awsRegion:       opts.AWSRegion,
+		s3PublicBaseURL: opts.S3PublicBaseURL,
 	}
 }
 
@@ -220,5 +238,13 @@ func (s *Service) DeletePost(ctx context.Context, slug string) error {
 }
 
 func (s *Service) PublishPost(ctx context.Context, slug string) (*Post, error) {
-	return s.repo.Publish(ctx, slug)
+	post, err := s.repo.Publish(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	evt := events.NewPostPublished(post.ID, post.Slug, post.Title)
+	if err := s.publisher.PublishPostPublished(ctx, evt); err != nil {
+		s.logger.Warn("failed to publish post.published event", "slug", post.Slug, "error", err)
+	}
+	return post, nil
 }
