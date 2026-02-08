@@ -89,7 +89,9 @@ func main() {
 	postsHandler := handlers.NewPostsHandler(svc, logger)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", handlers.Health())
+	mux.HandleFunc("GET /health", handlers.Health(&handlers.HealthDeps{
+		DB: db, Storage: store, RabbitMQURL: cfg.RabbitMQURL,
+	}))
 	mux.HandleFunc("GET /posts", postsHandler.List())
 	mux.HandleFunc("POST /posts", postsHandler.Create())
 	mux.HandleFunc("GET /posts/{slug}/content", postsHandler.GetContent())
