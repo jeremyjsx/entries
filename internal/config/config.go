@@ -14,6 +14,7 @@ type Config struct {
 	AWSRegion   string
 	S3Endpoint  string
 	RabbitMQURL string
+	APIKey      string
 }
 
 func Load() *Config {
@@ -28,6 +29,7 @@ func Load() *Config {
 		AWSRegion:   getEnv("AWS_REGION", "us-east-1"),
 		S3Endpoint:  getEnv("S3_ENDPOINT", ""),
 		RabbitMQURL: getEnv("RABBITMQ_URL", ""),
+		APIKey:      getEnv("API_KEY", ""),
 	}
 }
 

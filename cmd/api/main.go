@@ -101,7 +101,11 @@ func main() {
 	mux.HandleFunc("PATCH /posts/{slug}/publish", postsHandler.Publish())
 
 	handler := middleware.Recovery(logger)(
-		middleware.RequestID(middleware.Logging(logger)(mux)),
+		middleware.RequestID(
+			middleware.Logging(logger)(
+				middleware.APIKey(cfg.APIKey)(mux),
+			),
+		),
 	)
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
